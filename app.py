@@ -9,7 +9,7 @@ import yfinance as yf
 # --- 1. 頁面配置 ---
 st.set_page_config(page_title="正二量化中心", layout="wide")
 
-# --- 2. 備援式數據抓取引擎 ---
+# --- 2. 數據抓取引擎 ---
 @st.cache_data(ttl=3600)
 def analyze_stock(stock_id):
     """雙引擎抓取並計算五線譜與現價"""
@@ -86,4 +86,45 @@ if res_675 and res_670 and res_708:
     col_chart, col_action = st.columns([2, 1])
     
     with col_chart:
-        st.write("📊 0067
+        st.write("📊 00675L 樂活五線譜 (線性回歸通道)")
+        df_p = res_675['df']
+        s = res_675['std']
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Close'], name="價格", line=dict(color='black', width=1.5)))
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']+2*s, name="極端樂觀(+2SD)", line=dict(color='red', width=1, dash='dash')))
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']+1*s, name="相對過熱(+1SD)", line=dict(color='orange', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend'], name="中心趨勢線", line=dict(color='gray', width=1)))
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']-1*s, name="相對低估(-1SD)", line=dict(color='lightgreen', width=1, dash='dot')))
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']-2*s, name="極端悲觀(-2SD)", line=dict(color='green', width=1, dash='dash')))
+        
+        fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_action:
+        st.write("🛠️ 再平衡執行清單")
+        
+        def get_adj(name, curr_val, target_val, price):
+            diff = target_val - curr_val
+            shares = diff / price
+            return {"標的": name, "目前金額": f"{curr_val:,.0f}", "應調整金額": f"{diff:,.0f}", "應增減股數": f"{int(shares):,}"}
+
+        adj_list = [
+            get_adj("00675L", val_675, total_assets * w['G']/2, res_675['price']),
+            get_adj("00670L", val_670, total_assets * w['G']/2, res_670['price']),
+            get_adj("00708L", val_708, total_assets * w['H'], res_708['price']),
+        ]
+        
+        st.table(pd.DataFrame(adj_list))
+        st.success(f"目標保留現金: {total_assets * w['B']:,.0f} TWD")
+
+    # 狀態列
+    status_col1, status_col2 = st.columns(2)
+    with status_col1:
+        st.info(f"00675L 目前標準差落點：{sd:.2f} SD")
+    with status_col2:
+        if sd > 1: st.warning("📢 市場已進入『過熱區』，建議停止買入，並啟動分批獲利了結。")
+        elif sd < -1: st.success("📢 市場已進入『低估區』，建議維持紀律加碼。")
+        else: st.write("⚖️ 市場處於常態整理區。")
+else:
+    st.error("❌ 數據抓取失敗，請重新整理頁面。")
