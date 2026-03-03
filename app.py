@@ -51,9 +51,9 @@ shares_708 = st.sidebar.number_input("00708L 股數", value=0, step=1000)
 current_cash = st.sidebar.number_input("現金餘額 (TWD)", value=500000, step=10000)
 
 # --- 4. 主程式邏輯 ---
-st.title("🛡️ 正二量化投資：智慧再平衡監控")
+st.title("🛡️ 正二量化投資：再平衡監控中心")
 
-with st.spinner('同步全球數據中...'):
+with st.spinner('同步市場數據中...'):
     res_675 = analyze_stock("00675L")
     res_670 = analyze_stock("00670L")
     res_708 = analyze_stock("00708L")
@@ -61,11 +61,13 @@ with st.spinner('同步全球數據中...'):
     vix = float(vix_df['Close'].iloc[-1]) if not vix_df.empty else 20.0
 
 if res_675 and res_670 and res_708:
+    # A. 計算現況
     val_675 = shares_675 * res_675['price']
     val_670 = shares_670 * res_670['price']
     val_708 = shares_708 * res_708['price']
     total_assets = val_675 + val_670 + val_708 + current_cash
     
+    # B. 權重判定 (50/20/30)
     sd = res_675['sd']
     if sd >= 2.0: w = {"G": 0.15, "H": 0.10, "B": 0.75}
     elif sd <= -2.0: w = {"G": 0.80, "H": 0.20, "B": 0.00}
@@ -77,8 +79,7 @@ if res_675 and res_670 and res_708:
 
     st.subheader(f"💰 總資產估值：{total_assets:,.0f} TWD (VIX: {vix:.1f})")
     
-    # 建立左右布局
-    col_left, col_right = st.columns([2, 1])
+    col_left, col_right = st.columns([1.8, 1.2])
     
     with col_left:
         st.write("📊 00675L 樂活五線譜")
@@ -88,43 +89,59 @@ if res_675 and res_670 and res_708:
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Close'], name="價格", line=dict(color='black', width=1.5)))
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']+2*s, name="+2SD", line=dict(color='red', width=1, dash='dash')))
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']+1*s, name="+1SD", line=dict(color='orange', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend'], name="趨勢線", line=dict(color='gray', width=1)))
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend'], name="趨勢", line=dict(color='gray', width=1)))
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']-1*s, name="-1SD", line=dict(color='lightgreen', width=1, dash='dot')))
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trend']-2*s, name="-2SD", line=dict(color='green', width=1, dash='dash')))
-        fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0))
+        fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
         st.plotly_chart(fig, use_container_width=True)
 
-        # 左側下方顯示各標目前價格
-        st.write("📌 **標的即時價格資訊**")
+        st.write("📌 **標的即時價格**")
         p_col1, p_col2, p_col3 = st.columns(3)
-        p_col1.metric("00675L 現價", f"{res_675['price']:.2f}")
-        p_col2.metric("00670L 現價", f"{res_670['price']:.2f}")
-        p_col3.metric("00708L 現價", f"{res_708['price']:.2f}")
+        p_col1.metric("00675L", f"{res_675['price']:.2f}")
+        p_col2.metric("00670L", f"{res_670['price']:.2f}")
+        p_col3.metric("00708L", f"{res_708['price']:.2f}")
 
     with col_right:
-        st.write("🛠️ 再平衡執行清單 (目標配置比例)")
+        st.write("🛠️ **再平衡執行清單 (總表)**")
         
-        # 顯示目標比例資訊
-        st.info(f"🎯 **目標佔比**：成長桶 {w['G']*100:.0f}% | 波動桶 {w['H']*100:.0f}% | 儲備桶 {w['B']*100:.0f}%")
-        
-        def get_adj(name, curr_val, target_val, price, target_pct):
-            diff = target_val - curr_val
-            shares = diff / price
-            return {"標的": name, "建議佔比": f"{target_pct:.1f}%", "應增減股數": f"{int(shares):,}"}
+        def calculate_row(name, curr_val, target_pct, price, total):
+            target_val = total * (target_pct / 100)
+            diff_val = target_val - curr_val
+            curr_pct = (curr_val / total) * 100 if total > 0 else 0
+            shares = diff_val / price
+            return {
+                "標的": name,
+                "市值": f"{curr_val:,.0f}",
+                "目前占比": f"{curr_pct:.1f}%",
+                "建議占比": f"{target_pct:.1f}%",
+                "應增減股數": f"{int(shares):,}"
+            }
 
-        adj_list = [
-            get_adj("00675L", val_675, total_assets * w['G']/2, res_675['price'], (w['G']/2)*100),
-            get_adj("00670L", val_670, total_assets * w['G']/2, res_670['price'], (w['G']/2)*100),
-            get_adj("00708L", val_708, total_assets * w['H'], res_708['price'], w['H']*100),
+        rows = [
+            calculate_row("00675L", val_675, (w['G']/2)*100, res_675['price'], total_assets),
+            calculate_row("00670L", val_670, (w['G']/2)*100, res_670['price'], total_assets),
+            calculate_row("00708L", val_708, w['H']*100, res_708['price'], total_assets)
         ]
         
-        st.table(pd.DataFrame(adj_list))
-        st.success(f"目標保留現金：{total_assets * w['B']:,.0f} TWD")
+        # 加入現金行以利完整顯示
+        cash_pct = (current_cash / total_assets) * 100 if total_assets > 0 else 0
+        rows.append({
+            "標的": "現金儲備",
+            "市值": f"{current_cash:,.0f}",
+            "目前占比": f"{cash_pct:.1f}%",
+            "建議占比": f"{w['B']*100:.1f}%",
+            "應增減股數": "-"
+        })
         
-        # 顯示位階文字警告
-        if sd > 1: st.warning(f"⚠️ 位階 {sd:.2f}：建議獲利了結")
-        elif sd < -1: st.success(f"🔥 位階 {sd:.2f}：建議大膽進場")
-        else: st.write(f"⚖️ 位階 {sd:.2f}：常態波動中")
+        st.table(pd.DataFrame(rows))
+        
+        # 位階提示語
+        if sd > 1.5:
+            st.error(f"⚠️ 位階極高 ({sd:.2f})：強烈建議獲利了結，提高現金比重。")
+        elif sd < -1.5:
+            st.success(f"🔥 位階極低 ({sd:.2f})：強烈建議加碼進場，收割長線溢價。")
+        else:
+            st.info(f"⚖️ 位階平衡 ({sd:.2f})：維持目前策略，等待再平衡點。")
 
 else:
-    st.error("❌ 數據抓取失敗，請重新整理。")
+    st.error("❌ 數據連線中斷，請點擊 Reboot 或重新整理。")
